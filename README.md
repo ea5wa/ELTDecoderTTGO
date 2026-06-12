@@ -58,9 +58,14 @@ pio test -e native         # tests unitarios del decodificador (en el PC)
 
 ## Uso
 
-- **Pantalla**: frecuencia y RSSI arriba; al recibir una trama, el ID de
-  15 hex en grande, MID, formato (LARGA/CORTA), `TEST` si es autotest,
-  resultado BCH, contador y antigüedad de la última recepción.
+- **Pantalla**: en reposo muestra frecuencia, RSSI, squelch y el contador de
+  tramas recibidas ("Esperando baliza...").
+- **Detección**: al decodificar una trama se muestra la pantalla
+  "BALIZA DETECTADA" con el ID de 15 hex en grande, MID, formato
+  (LARGA/CORTA), `TEST` si es autotest, resultado BCH y antigüedad, y **se
+  mantiene fija hasta que una pulsación corta del botón IO38 la borra** y
+  devuelve el equipo a la pantalla de espera. Si llegan más tramas mientras
+  tanto, la pantalla se actualiza con la última.
 - **Botón de usuario** (IO38, el central): pulsación larga (2 s) → abre el
   **menú** en pantalla (`Apagar` / `Borrar stats` / `Cambiar frecuencia` /
   `Salir`). La acción larga se dispara al cumplirse los 2 s, sin necesidad

@@ -55,6 +55,8 @@ static elt406::Frame lastFrame;
 static uint32_t frameCount    = 0;
 static uint32_t lastFrameMs   = 0;
 static float    lastFrameRssi = -127.0f;
+// Trama recien detectada retenida en pantalla hasta confirmar con IO38
+static bool     frameHold     = false;
 
 static bool pmuOk = false;
 
@@ -335,10 +337,48 @@ static void drawMenu() {
   oled.sendBuffer();
 }
 
+// Pantalla de deteccion: se mantiene hasta confirmar con el boton IO38
+static void drawFrameHold() {
+  char line[40];
+  oled.clearBuffer();
+
+  // Cabecera invertida para llamar la atencion
+  oled.setFont(u8g2_font_6x10_tf);
+  oled.drawBox(0, 0, 128, 11);
+  oled.setDrawColor(0);
+  oled.drawStr(13, 9, "BALIZA DETECTADA");
+  oled.setDrawColor(1);
+
+  oled.setFont(u8g2_font_7x13B_tf);
+  oled.drawStr(5, 28, lastFrame.hexId);
+
+  oled.setFont(u8g2_font_6x10_tf);
+  snprintf(line, sizeof line, "MID %u  %s%s", lastFrame.countryCode,
+           lastFrame.longFormat ? "LARGA" : "CORTA",
+           lastFrame.selfTest ? " TEST" : "");
+  oled.drawStr(0, 41, line);
+
+  snprintf(line, sizeof line, "BCH1 %s%s  %.0fdBm",
+           lastFrame.bch1Ok ? "OK" : "ERR",
+           lastFrame.longFormat
+               ? (lastFrame.bch2Ok ? " BCH2 OK" : " BCH2 ERR") : "",
+           lastFrameRssi);
+  oled.drawStr(0, 52, line);
+
+  uint32_t age = (millis() - lastFrameMs) / 1000;
+  snprintf(line, sizeof line, "hace %lus   IO38=seguir", (unsigned long)age);
+  oled.drawStr(0, 64, line);
+  oled.sendBuffer();
+}
+
 static void drawScreen() {
   char line[40];
   if (menuOpen) {
     drawMenu();
+    return;
+  }
+  if (frameHold) {
+    drawFrameHold();
     return;
   }
   oled.clearBuffer();
@@ -355,30 +395,15 @@ static void drawScreen() {
   oled.drawStr(74, 22, line);
   if (capturing) oled.drawBox(124, 14, 4, 8);
 
-  if (frameCount == 0) {
-    oled.drawStr(10, 40, "Esperando baliza...");
-    snprintf(line, sizeof line, "squelch %.0f dBm", squelchDbm);
-    oled.drawStr(10, 52, line);
-  } else {
-    // ID de 15 hex en grande (7 px/caracter -> 105 px)
-    oled.setFont(u8g2_font_7x13B_tf);
-    oled.drawStr(5, 37, lastFrame.hexId);
-
-    oled.setFont(u8g2_font_6x10_tf);
-    snprintf(line, sizeof line, "MID %u  %s%s", lastFrame.countryCode,
-             lastFrame.longFormat ? "LARGA" : "CORTA",
-             lastFrame.selfTest ? " TEST" : "");
-    oled.drawStr(0, 48, line);
-
-    snprintf(line, sizeof line, "BCH1 %s%s", lastFrame.bch1Ok ? "OK" : "ERR",
-             lastFrame.longFormat
-                 ? (lastFrame.bch2Ok ? "  BCH2 OK" : "  BCH2 ERR") : "");
-    oled.drawStr(0, 57, line);
-
-    uint32_t age = (millis() - lastFrameMs) / 1000;
-    snprintf(line, sizeof line, "#%lu hace %lus %.0fdBm",
-             (unsigned long)frameCount, (unsigned long)age, lastFrameRssi);
-    oled.drawStr(0, 64, line);
+  // Estado habitual: a la espera de trama (la ultima detectada solo se
+  // muestra en la pantalla de retencion, hasta confirmarla con IO38)
+  oled.drawStr(10, 40, "Esperando baliza...");
+  snprintf(line, sizeof line, "squelch %.0f dBm", squelchDbm);
+  oled.drawStr(10, 52, line);
+  if (frameCount > 0) {
+    snprintf(line, sizeof line, "tramas recibidas: %lu",
+             (unsigned long)frameCount);
+    oled.drawStr(10, 64, line);
   }
   oled.sendBuffer();
 }
@@ -421,7 +446,9 @@ static void handleFrame() {
   ++frameCount;
   lastFrameMs = millis();
   lastFrameRssi = rssiPeak;
+  frameHold = true;          // retener en pantalla hasta confirmar con IO38
   printFrame(lastFrame);
+  drawScreen();
 }
 
 // ------------------------------------------------------------ puerto serie
@@ -503,6 +530,7 @@ static void menuExecute() {
       break;                   // no retorna
     case 1:                    // Borrar stats
       frameCount = 0;
+      frameHold = false;
       memset(&lastFrame, 0, sizeof(lastFrame));
       Serial.println("Estadisticas borradas");
       break;
@@ -569,6 +597,10 @@ static void pollButton() {
       // pulsacion corta: mover el cursor del menu
       menuSel = (menuSel + 1) % (menuLevel ? NUM_CHANNELS : MENU_N);
       menuTouchMs = ms;
+      drawScreen();
+    } else if (frameHold) {
+      // confirmar la baliza detectada y volver a la pantalla normal
+      frameHold = false;
       drawScreen();
     }
   }
